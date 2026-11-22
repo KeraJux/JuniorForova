@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A thoughtful starting point for school research. Explore questions, understand answers, and follow real sources with Folio."
+    />
+    <title>Folio — A little curiosity goes a long way.</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to research</a>
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="Folio home"
+        ><span class="brand-mark">f<span>✦</span></span
+        >folio<span class="brand-dot">.</span></a
+      >
+      <div class="workspace-label">YOUR STUDY SPACE</div>
+      <nav aria-label="Workspace">
+        <button id="nav-research" class="nav-item active">
+          <span aria-hidden="true">⌕</span> Research
+          <span class="nav-arrow" aria-hidden="true">↗</span></button
+        ><button id="nav-library" class="nav-item">
+          <span aria-hidden="true">▤</span> My library
+          <span id="library-count" class="count">0</span>
+        </button>
+      </nav>
+      <div class="side-note">
+        <span class="note-spark" aria-hidden="true">✳</span>
+        <h3>Good research starts<br />with a good question.</h3>
+        <p>Follow your curiosity.<br />We’ll help you find your way.</p>
+        <div class="note-line" aria-hidden="true"></div>
+      </div>
+      <div class="sidebar-bottom">
+        <button id="setup-button" class="setup-button">
+          <span aria-hidden="true">⚙</span> Connection & setup
+          <span id="connection-dot" class="status-dot"></span>
+        </button>
+        <div class="profile">
+          <span class="avatar">S</span>
+          <div>Student workspace<small>Made for curious minds</small></div>
+        </div>
+      </div>
+    </aside>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <span class="breadcrumb">Your workspace</span
+          ><span class="crumb-slash">/</span
+          ><span id="page-label">Research</span>
+        </div>
+        <span class="top-note"
+          ><span aria-hidden="true">✧</span> A little curiosity goes a long
+          way.</span
+        >
+      </header>
+      <main id="main">
+        <section id="research-view">
+          <div class="intro">
+            <div class="eyebrow"><span></span> BIG IDEAS START HERE</div>
+            <h1>
+              What are you<br />curious <em>about?</em
+              ><span class="hero-star" aria-hidden="true">✳</span>
+            </h1>
+            <p>
+              From your first question to your next big idea.<br />Explore,
+              understand, and make the knowledge yours.
+            </p>
+          </div>
+          <form id="research-form" class="question-card">
+            <label class="sr-only" for="question">Your research question</label
+            ><textarea
+              id="question"
+              name="question"
+              placeholder="Ask a question. Explore a topic. Connect the dots…"
+              minlength="8"
+              maxlength="2000"
+              required
+              rows="3"
+            ></textarea>
+            <div class="question-tools">
+              <div class="question-options">
+                <span class="search-badge"
+                  ><span aria-hidden="true">◎</span>
+                  <span id="search-label">Web sources</span></span
+                ><span class="option-divider"></span
+                ><label class="sr-only" for="level">Study level</label
+                ><select id="level">
+                  <option>High school</option>
+                  <option>Middle school</option>
+                  <option>University</option>
+                </select>
+              </div>
+              <button class="primary-button" id="ask-button" type="submit">
+                Start exploring <span aria-hidden="true">↗</span>
+              </button>
+            </div>
+          </form>
+          <div class="under-question">
+            <span
+              ><span aria-hidden="true">✧</span> AI to guide your thinking.
+              Sources to go deeper.</span
+            ><span id="char-count">0 / 2,000</span>
+          </div>
+          <div id="feedback" role="status" aria-live="polite" hidden></div>
+          <section
+            id="answer-section"
+            class="answer-card"
+            aria-labelledby="answer-title"
+            hidden
+          >
+            <div class="answer-top">
+              <span class="eyebrow">YOUR RESEARCH BRIEF</span
+              ><button id="save-button" class="text-button">
+                ＋ Save to library
+              </button>
+            </div>
+            <h2 id="answer-title" tabindex="-1"></h2>
+            <div id="answer-meta" class="answer-meta"></div>
+            <div id="answer-body" class="answer-body"></div>
+            <div class="sources-heading">
+              <h3>Go to the source</h3>
+              <span id="source-count"></span>
+            </div>
+            <div id="sources"></div>
+            <p class="answer-caution">
+              AI can make mistakes. Open the sources, check the evidence, and
+              write in your own words.
+            </p>
+            <button id="followup-button" class="text-button">
+              Ask a follow-up ↑
+            </button>
+          </section>
+          <section id="discover" class="discover">
+            <div class="section-top">
+              <div>
+                <div class="eyebrow muted">A STARTING POINT</div>
+                <h2>Let curiosity lead.</h2>
+              </div>
+              <span class="handwritten"
+                >There’s a whole world to explore
+                <span aria-hidden="true">↴</span></span
+              >
+            </div>
+            <div
+              class="filters"
+              role="group"
+              aria-label="Filter topic suggestions"
+            >
+              <button
+                class="filter active"
+                data-filter="All topics"
+                aria-pressed="true"
+              >
+                All topics</button
+              ><button
+                class="filter"
+                data-filter="Science"
+                aria-pressed="false"
+              >
+                Science</button
+              ><button
+                class="filter"
+                data-filter="History"
+                aria-pressed="false"
+              >
+                History</button
+              ><button
+                class="filter"
+                data-filter="Literature"
+                aria-pressed="false"
+              >
+                Literature</button
+              ><button
+                class="filter"
+                data-filter="Our world"
+                aria-pressed="false"
+              >
+                Our world
+              </button>
+            </div>
+            <div id="topic-grid" class="topic-grid"></div>
+          </section>
+          <div class="research-tip">
+            <span aria-hidden="true">◈</span>
+            <p>
+              <strong>A researcher’s mindset</strong> The best answers often
+              lead to better questions. Keep asking “why?”
+            </p>
+          </div>
+        </section>
+        <section id="library-view" hidden>
+          <div class="eyebrow">YOUR IDEAS, COLLECTED</div>
+          <h1 class="library-title">
+            A place for<br /><em>your discoveries.</em>
+          </h1>
+          <p class="library-subtitle">
+            Saved on this browser, ready when you need them.
+          </p>
+          <div id="library-items"></div>
+        </section>
+        <footer>
+          <span class="footer-brand">folio.</span
+          ><span>Less searching in circles. More lightbulb moments.</span
+          ><span>Stay curious <span aria-hidden="true">↗</span></span>
+        </footer>
+      </main>
+    </div>
+    <dialog id="setup-dialog" aria-labelledby="setup-title">
+      <div class="dialog-top">
+        <span class="eyebrow">MAKE THE CONNECTION</span
+        ><button id="close-setup" class="icon-button" aria-label="Close setup">
+          ×
+        </button>
+      </div>
+      <h2 id="setup-title">A little setup.<br />A world of questions.</h2>
+      <p id="setup-status"></p>
+      <p>The app owner can connect AI in three steps:</p>
+      <ol>
+        <li>Copy <code>.env.example</code> to <code>.env</code>.</li>
+        <li>
+          Add a funded OpenAI API key as <code>OPENAI_API_KEY</code>. Keep it on
+          the server.
+        </li>
+        <li>Restart with <code>npm start</code> and refresh this page.</li>
+      </ol>
+      <p>
+        Web sources use OpenAI’s hosted web search. No separate search key is
+        needed. Set <code>WEB_SEARCH=false</code> for answers without live
+        research. Model and billing access are required.
+      </p>
+      <p class="privacy-note">
+        Questions are sent to OpenAI when you explore. Saved briefs stay in this
+        browser. Avoid sharing personal information.
+      </p>
+      <button id="done-setup" class="primary-button">
+        Got it <span aria-hidden="true">↗</span>
+      </button>
+    </dialog>
+  </body>
+</html>
