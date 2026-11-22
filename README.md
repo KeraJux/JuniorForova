@@ -1,6 +1,8 @@
-# Folio
+# Unggai Seventh-day Adventist A.i Assistance
 
-A small school research workspace: ask questions at your study level, read AI-assisted explanations, follow source citations, and save research briefs in a browser-local library. Built with Node.js and plain HTML/CSS/JavaScript; no runtime dependencies or build step.
+A school research workspace for Papua New Guinea: ask questions at your study level, read AI-assisted explanations, follow source citations, and save research briefs in a browser-local library. Built with Node.js and plain HTML/CSS/JavaScript; no runtime dependencies or build step.
+
+The supplied Unggai SDA Secondary School banner is served locally as the application logo, favicon, and softened page background.
 
 ## Run locally
 
