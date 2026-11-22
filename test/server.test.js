@@ -55,6 +55,11 @@ test("missing key is actionable; config and static files never expose secrets", 
     });
     assert.equal((await fetch(`${root}/.env`)).status, 404);
     assert.equal((await fetch(`${root}/server.js`)).status, 404);
+    const banner = await fetch(`${root}/unggai-sda.jpg`);
+    assert.equal(banner.status, 200);
+    assert.equal(banner.headers.get("content-type"), "image/jpeg");
+    const image = new Uint8Array(await banner.arrayBuffer());
+    assert.deepEqual([...image.slice(0, 3)], [0xff, 0xd8, 0xff]);
     const home = await fetch(root);
     assert.equal(home.status, 200);
     assert.match(
