@@ -1,3 +1,16 @@
+import { readNotes, saveNote, deleteNote } from "./notes.js";
+
+const nativeApp = Boolean(window.Capacitor?.isNativePlatform());
+const apiBase = window.STUDY_API_URL || "";
+const backendMissing = nativeApp && !apiBase;
+let notes = [];
+try {
+  notes = readNotes(localStorage);
+} catch {
+  /* Storage may be disabled. */
+}
+let editingNote = null;
+
 const $ = (selector) => document.querySelector(selector);
 const topics = [
   {
@@ -101,8 +114,11 @@ function showView(view) {
     view === "library" ? "page" : "false",
   );
   $("#page-label").textContent =
-    view === "research" ? "Research" : "My library";
-  if (view === "library") renderLibrary();
+    view === "research" ? "Study & research" : "My library";
+  if (view === "library") {
+    renderLibrary();
+    renderNotes();
+  }
 }
 function setQuestion(question) {
   if (busy) return;
@@ -170,7 +186,7 @@ function renderAnswer(answer) {
   $("#answer-section").hidden = false;
   $("#answer-title").textContent = answer.question;
   $("#answer-meta").textContent =
-    `${answer.level} · ${answer.sources.length ? "Includes web citations" : "No source citations returned"} · ${new Date(answer.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+    `${answer.subject || "General"} · ${answer.mode === "explain" ? "Subject explanation" : "Research"} · ${answer.level} · ${answer.sources.length ? "Includes web citations" : "No source citations returned"} · ${new Date(answer.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
   const body = $("#answer-body");
   body.replaceChildren();
   for (const part of answer.parts) {
@@ -242,7 +258,7 @@ function updateSaveButton() {
     ? "✓ Saved to library"
     : "＋ Save to library";
   $("#save-button").disabled = Boolean(saved);
-  $("#library-count").textContent = library.length;
+  $("#library-count").textContent = library.length + notes.length;
 }
 function persistLibrary(next) {
   try {
@@ -253,7 +269,7 @@ function persistLibrary(next) {
   } catch {
     showView("research");
     feedback(
-      "Your browser could not save this brief. Free up browser storage or enable local storage, then retry.",
+      "This device could not save this answer. Free up browser storage or enable local storage, then retry.",
       true,
     );
     return false;
@@ -271,7 +287,7 @@ function renderLibrary() {
     title.textContent = "Your next discovery belongs here.";
     const text = document.createElement("p");
     text.textContent =
-      "Explore a question, then save your research brief. Your answers and source links will be kept together on this browser.";
+      "Explore a question, then save your research brief. Your answers and source links will be kept together on this device.";
     const button = document.createElement("button");
     button.className = "primary-button";
     button.textContent = "Start a little research ↗";
@@ -312,6 +328,11 @@ function openSetup() {
   $("#setup-status").textContent = configured
     ? `A server API key is set. Live web search is ${webSearch ? "on" : "off"}. Key validity and provider access are checked when you submit a question.`
     : "AI is not connected yet. You can explore topic prompts now; answers need a server API key.";
+  $("#backend-status").textContent = nativeApp
+    ? apiBase
+      ? "Android backend: " + apiBase
+      : "No Android AI backend is configured. The app owner must set STUDY_API_URL to the HTTPS backend origin and rebuild the app. Your notes work without it."
+    : "This web workspace uses its own server for AI requests.";
   $("#setup-dialog").showModal();
 }
 function updateCount() {
@@ -344,18 +365,25 @@ $("#research-form").addEventListener("submit", async (event) => {
   $("#ask-button").textContent = "Exploring…";
   $("#question").readOnly = true;
   $("#level").disabled = true;
+  $("#study-mode").disabled = true;
+  $("#subject").disabled = true;
   $("#answer-section").hidden = true;
   $("#research-form").setAttribute("aria-busy", "true");
   feedback(
-    webSearch
+    webSearch && $("#study-mode").value === "research"
       ? "Following your question, searching the web, and putting the ideas together… This can take up to 90 seconds."
       : "Thinking through your question… Live web search is off.",
   );
   try {
-    const response = await fetch("/api/research", {
+    const response = await fetch(`${apiBase}/api/research`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, level }),
+      body: JSON.stringify({
+        question,
+        level,
+        mode: $("#study-mode").value,
+        subject: $("#subject").value,
+      }),
       signal: AbortSignal.timeout(100000),
     });
     const data = await response.json();
@@ -395,6 +423,8 @@ $("#research-form").addEventListener("submit", async (event) => {
     $("#ask-button").append(arrow);
     $("#question").readOnly = false;
     $("#level").disabled = false;
+    $("#study-mode").disabled = false;
+    $("#subject").disabled = false;
     $("#research-form").setAttribute("aria-busy", "false");
   }
 });
@@ -402,6 +432,7 @@ $("#question").addEventListener("input", updateCount);
 $("#nav-research").addEventListener("click", () => showView("research"));
 $("#nav-library").addEventListener("click", () => showView("library"));
 $("#setup-button").addEventListener("click", openSetup);
+$("#mobile-setup").addEventListener("click", openSetup);
 $("#close-setup").addEventListener("click", () => $("#setup-dialog").close());
 $("#done-setup").addEventListener("click", () => $("#setup-dialog").close());
 $("#setup-dialog").addEventListener("click", (event) => {
@@ -426,7 +457,7 @@ $("#save-button").addEventListener("click", () => {
     return;
   }
   if (persistLibrary([current, ...library]))
-    feedback("Research brief saved to your library on this browser.");
+    feedback("Research brief saved to your library on this device.");
 });
 $("#followup-button").addEventListener("click", () => {
   if (current) setQuestion(`About “${current.question}”: `);
@@ -444,7 +475,10 @@ document.querySelectorAll(".filter").forEach((button) =>
 renderTopics();
 updateSaveButton();
 showView("research");
-fetch("/api/config")
+(backendMissing
+  ? Promise.reject(new Error("No backend"))
+  : fetch(`${apiBase}/api/config`, { signal: AbortSignal.timeout(10000) })
+)
   .then((response) => {
     if (!response.ok) throw new Error("Config unavailable");
     return response.json();
@@ -453,9 +487,7 @@ fetch("/api/config")
     configured = config.configured;
     webSearch = config.webSearch;
     $("#connection-dot").classList.toggle("connected", configured);
-    $("#search-label").textContent = webSearch
-      ? "Web sources"
-      : "Web search off";
+    updateMode();
     if (!configured)
       feedback(
         "Your workspace is ready. Connect AI to turn your questions into research.",
@@ -465,7 +497,100 @@ fetch("/api/config")
   })
   .catch(() =>
     feedback(
-      "Could not check the AI connection. Refresh the page to try again.",
+      backendMissing
+        ? "AI backend not configured. You can write and save notes now; AI answers need an HTTPS backend."
+        : "Could not check the AI connection. Notes still work. Check your connection and refresh to try again.",
+      true,
       true,
     ),
   );
+
+function updateMode() {
+  const explain = $("#study-mode").value === "explain";
+  $("#mode-hint").textContent = explain
+    ? "Learn step by step with a worked example and practice question. Explanations use model knowledge without live web verification."
+    : "Investigate a question with live web sources. Open citations to check the evidence.";
+  $("#search-label").textContent = explain
+    ? "Subject explanation"
+    : webSearch
+      ? "Web sources"
+      : "Web search off";
+}
+$("#study-mode").addEventListener("change", updateMode);
+
+function resetNoteEditor() {
+  editingNote = null;
+  $("#note-form").reset();
+  $("#note-editor-title").textContent = "Write a study note";
+  $("#cancel-note").hidden = true;
+}
+function renderNotes() {
+  $("#study-notes").replaceChildren(
+    ...notes.map((note) => {
+      const card = document.createElement("article");
+      card.className = "study-note";
+      const title = document.createElement("h3");
+      title.textContent = note.title;
+      const body = document.createElement("p");
+      body.textContent = note.body;
+      const meta = document.createElement("small");
+      meta.textContent = `Your note · ${new Date(note.updatedAt).toLocaleDateString()}`;
+      const actions = document.createElement("div");
+      actions.className = "note-actions";
+      const edit = document.createElement("button");
+      edit.className = "text-button";
+      edit.textContent = "Edit note";
+      edit.setAttribute("aria-label", `Edit ${note.title}`);
+      edit.addEventListener("click", () => {
+        editingNote = note.id;
+        $("#note-title").value = note.title;
+        $("#note-body").value = note.body;
+        $("#note-editor-title").textContent = "Edit your study note";
+        $("#cancel-note").hidden = false;
+        $("#note-title").focus();
+      });
+      const remove = document.createElement("button");
+      remove.className = "text-button";
+      remove.textContent = "Delete note";
+      remove.setAttribute("aria-label", `Delete ${note.title}`);
+      remove.addEventListener("click", () => {
+        if (!confirm(`Delete “${note.title}”? This cannot be undone.`)) return;
+        try {
+          notes = deleteNote(localStorage, notes, note.id);
+          if (editingNote === note.id) resetNoteEditor();
+          renderNotes();
+          updateSaveButton();
+          $("#note-status").textContent = "Note deleted.";
+        } catch {
+          $("#note-status").textContent =
+            "Could not delete this note. Check device storage and retry.";
+        }
+      });
+      actions.append(edit, remove);
+      card.append(meta, title, body, actions);
+      return card;
+    }),
+  );
+}
+$("#cancel-note").addEventListener("click", resetNoteEditor);
+$("#note-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  try {
+    notes = saveNote(localStorage, notes, {
+      id: editingNote || crypto.randomUUID(),
+      title: $("#note-title").value,
+      body: $("#note-body").value,
+      updatedAt: new Date().toISOString(),
+    });
+    resetNoteEditor();
+    renderNotes();
+    updateSaveButton();
+    $("#note-status").textContent = "Note saved on this device.";
+  } catch (error) {
+    $("#note-status").textContent =
+      error.message.startsWith("Add a title") ||
+      error.message.startsWith("You have")
+        ? error.message
+        : "Could not save your note. Free up device storage and retry. Your text is still here.";
+  }
+});

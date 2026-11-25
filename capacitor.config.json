@@ -1,0 +1,13 @@
+{
+  "appId": "org.ungai.study",
+  "appName": "Ungai Study",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "LIGHT"
+    }
+  }
+}

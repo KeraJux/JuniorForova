@@ -260,3 +260,83 @@ test("global request budget bounds repeated provider usage", async () => {
     },
   );
 });
+
+test("subject explanations teach without claiming live research", async () => {
+  await withApp(
+    {
+      env: { OPENAI_API_KEY: "test" },
+      fetchImpl: async (_, options) => {
+        const body = JSON.parse(options.body);
+        assert.equal(body.tools, undefined);
+        assert.match(body.instructions, /worked example/);
+        assert.match(body.input, /Subject: Mathematics/);
+        return Response.json({
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [
+                { type: "output_text", text: "Test fixture explanation." },
+              ],
+            },
+          ],
+        });
+      },
+    },
+    async ({ post }) => {
+      const response = await post({
+        ...valid,
+        mode: "explain",
+        subject: "Mathematics",
+      });
+      assert.equal(response.status, 200);
+      const answer = await response.json();
+      assert.equal(answer.webSearch, false);
+      assert.equal(answer.mode, "explain");
+      assert.equal(answer.subject, "Mathematics");
+      assert.deepEqual(answer.sources, []);
+    },
+  );
+});
+
+test("only explicitly enabled Android origin gets CORS access; invalid modes are rejected", async () => {
+  for (const enabled of [false, true]) {
+    await withApp(
+      { env: { ...(enabled ? { APP_ORIGIN: "https://localhost" } : {}) } },
+      async ({ root, post }) => {
+        const origin = "https://localhost";
+        const preflight = await fetch(`${root}/api/research`, {
+          method: "OPTIONS",
+          headers: {
+            Origin: origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type",
+          },
+        });
+        assert.equal(preflight.status, enabled ? 204 : 404);
+        assert.equal(
+          preflight.headers.get("access-control-allow-origin"),
+          enabled ? origin : null,
+        );
+        const response = await post(valid, { Origin: origin });
+        assert.equal(response.status, enabled ? 503 : 403);
+        const config = await fetch(`${root}/api/config`, {
+          headers: { Origin: origin },
+        });
+        assert.equal(
+          config.headers.get("access-control-allow-origin"),
+          enabled ? origin : null,
+        );
+        const bad = await post(valid, { Origin: "https://attacker.example" });
+        assert.equal(bad.status, 403);
+        assert.equal(bad.headers.get("access-control-allow-origin"), null);
+        for (const input of [
+          { ...valid, mode: "invalid" },
+          { ...valid, subject: "Injected subject" },
+        ])
+          assert.equal((await post(input)).status, 400);
+      },
+    );
+  }
+});
