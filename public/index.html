@@ -2,15 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'"
+    />
     <meta
       name="description"
-      content="A thoughtful starting point for school research. Explore questions, understand answers, and follow real sources with Folio."
+      content="AI-assisted subject explanations, research with source links, and saved notes for Ungai Seventh-day Adventist Secondary School."
     />
-    <title>Folio — A little curiosity goes a long way.</title>
+    <title>Ungai Study — Learn with curiosity</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
-    <script src="/app.js" defer></script>
+    <script src="/runtime-config.js" defer></script>
+    <script src="/app.js" type="module"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to research</a>
@@ -19,7 +27,7 @@
         ><span class="brand-mark">f<span>✦</span></span
         >folio<span class="brand-dot">.</span></a
       >
-      <div class="workspace-label">YOUR STUDY SPACE</div>
+      <div class="workspace-label">UNGAI STUDY SPACE</div>
       <nav aria-label="Workspace">
         <button id="nav-research" class="nav-item active">
           <span aria-hidden="true">⌕</span> Research
@@ -42,7 +50,7 @@
         </button>
         <div class="profile">
           <span class="avatar">S</span>
-          <div>Student workspace<small>Made for curious minds</small></div>
+          <div>Ungai Secondary<small>Seventh-day Adventist school</small></div>
         </div>
       </div>
     </aside>
@@ -51,7 +59,7 @@
         <div>
           <span class="breadcrumb">Your workspace</span
           ><span class="crumb-slash">/</span
-          ><span id="page-label">Research</span>
+          ><span id="page-label">Study & research</span>
         </div>
         <span class="top-note"
           ><span aria-hidden="true">✧</span> A little curiosity goes a long
@@ -61,16 +69,47 @@
       <main id="main">
         <section id="research-view">
           <div class="intro">
-            <div class="eyebrow"><span></span> BIG IDEAS START HERE</div>
+            <div class="eyebrow"><span></span> UNGAI · LEARN WITH PURPOSE</div>
             <h1>
               What are you<br />curious <em>about?</em
               ><span class="hero-star" aria-hidden="true">✳</span>
             </h1>
             <p>
-              From your first question to your next big idea.<br />Explore,
-              understand, and make the knowledge yours.
+              Your study companion at Ungai Seventh-day Adventist Secondary
+              School.<br />Understand a subject, investigate a question, or keep
+              a note.
             </p>
           </div>
+          <div class="study-controls">
+            <label for="study-mode"
+              >I want to
+              <select id="study-mode">
+                <option value="research">Research with sources</option>
+                <option value="explain">Understand a subject</option>
+              </select>
+            </label>
+            <label for="subject"
+              >Subject
+              <select id="subject">
+                <option>General</option>
+                <option>Mathematics</option>
+                <option>Biology</option>
+                <option>Chemistry</option>
+                <option>Physics</option>
+                <option>English</option>
+                <option>History</option>
+                <option>Geography</option>
+                <option>Religious education</option>
+              </select>
+            </label>
+            <button id="mobile-setup" class="text-button" type="button">
+              AI connection ↗
+            </button>
+          </div>
+          <p id="mode-hint" class="mode-hint">
+            Investigate a question with live web sources. Open citations to
+            check the evidence.
+          </p>
           <form id="research-form" class="question-card">
             <label class="sr-only" for="question">Your research question</label
             ><textarea
@@ -199,8 +238,41 @@
             A place for<br /><em>your discoveries.</em>
           </h1>
           <p class="library-subtitle">
-            Saved on this browser, ready when you need them.
+            Your own notes and saved answers, kept on this device. No account or
+            AI connection needed for notes.
           </p>
+          <form id="note-form" class="note-editor">
+            <h2 id="note-editor-title">Write a study note</h2>
+            <label for="note-title">Title</label>
+            <input
+              id="note-title"
+              maxlength="120"
+              required
+              placeholder="e.g. Biology revision — cells"
+            />
+            <label for="note-body">Your notes</label>
+            <textarea
+              id="note-body"
+              rows="5"
+              maxlength="12000"
+              required
+              placeholder="Keep key ideas, class notes, and questions to revisit…"
+            ></textarea>
+            <div class="note-actions">
+              <button class="primary-button" type="submit">Save note</button
+              ><button
+                id="cancel-note"
+                class="text-button"
+                type="button"
+                hidden
+              >
+                Cancel edit
+              </button>
+            </div>
+          </form>
+          <p id="note-status" role="status" aria-live="polite"></p>
+          <div id="study-notes"></div>
+          <h2 class="saved-answers-heading">Saved AI answers</h2>
           <div id="library-items"></div>
         </section>
         <footer>
@@ -219,6 +291,7 @@
       </div>
       <h2 id="setup-title">A little setup.<br />A world of questions.</h2>
       <p id="setup-status"></p>
+      <p id="backend-status"></p>
       <p>The app owner can connect AI in three steps:</p>
       <ol>
         <li>Copy <code>.env.example</code> to <code>.env</code>.</li>
@@ -234,8 +307,8 @@
         research. Model and billing access are required.
       </p>
       <p class="privacy-note">
-        Questions are sent to OpenAI when you explore. Saved briefs stay in this
-        browser. Avoid sharing personal information.
+        Questions are sent to OpenAI when you explore. Saved answers and your
+        notes stay on this device. Avoid sharing personal information.
       </p>
       <button id="done-setup" class="primary-button">
         Got it <span aria-hidden="true">↗</span>
