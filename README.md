@@ -8,11 +8,15 @@ Requires Node.js 22 or newer (Node 24 recommended).
 
 ```sh
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY to your own funded OpenAI API key.
+# Open .env in a local editor and privately set OPENAI_API_KEY to a new key.
 npm start
 ```
 
 Open http://127.0.0.1:3000. Without a key, the UI works for exploring prompts and shows configuration guidance; it does not produce demo answers. Restart the server after changing `.env`.
+
+Keep `.env` in the server project root, beside `package.json`, outside `public/`. Both `npm start` and `npm run dev` use Node's built-in environment-file loading; no additional package is needed. An existing process environment variable takes precedence over `.env`. Other variants such as `.env.local` are ignored by Git but are not loaded automatically. Run the npm commands from this project directory.
+
+If a key was exposed in chat or elsewhere, revoke it in your OpenAI account and create a replacement privately. Do not retrieve, reuse, or paste the exposed key. Enter the replacement only in the server's private `.env` (or your host's server environment/secret settings). Keep `.env.example` blank for `OPENAI_API_KEY`. Never put a key in source, shell commands/history, logs, screenshots, browser/mobile code, or client build variables. Git ignores `.env`, its variants, and named environment files such as `production.env`; do not force-add them. Only the server uses the key, and `/api/config` reports a configuration boolean without returning its value.
 
 | Server variable  | Default      | Purpose                                                                     |
 | ---------------- | ------------ | --------------------------------------------------------------------------- |

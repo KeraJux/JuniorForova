@@ -53,7 +53,8 @@ test("missing key is actionable; config and static files never expose secrets", 
       configured: false,
       webSearch: true,
     });
-    assert.equal((await fetch(`${root}/.env`)).status, 404);
+    for (const path of ["/.env", "/.env.local", "/.env.example", "/production.env"])
+      assert.equal((await fetch(`${root}${path}`)).status, 404);
     assert.equal((await fetch(`${root}/server.js`)).status, 404);
     const home = await fetch(root);
     assert.equal(home.status, 200);
