@@ -223,19 +223,21 @@
       <ol>
         <li>Copy <code>.env.example</code> to <code>.env</code>.</li>
         <li>
-          Add a funded OpenAI API key as <code>OPENAI_API_KEY</code>. Keep it on
-          the server.
+          Add a newly generated OpenRouter API key as
+          <code>OPENROUTER_API_KEY</code>
+          on the server. Revoke any key previously shared in chat.
         </li>
         <li>Restart with <code>npm start</code> and refresh this page.</li>
       </ol>
       <p>
-        Web sources use OpenAI’s hosted web search. No separate search key is
-        needed. Set <code>WEB_SEARCH=false</code> for answers without live
+        Web sources use OpenRouter’s web search plugin. No separate search key
+        is needed. Set <code>WEB_SEARCH=false</code> for answers without live
         research. Model and billing access are required.
       </p>
       <p class="privacy-note">
-        Questions are sent to OpenAI when you explore. Saved briefs stay in this
-        browser. Avoid sharing personal information.
+        Questions are sent to OpenRouter and its model/search providers when you
+        explore. Saved briefs stay in this browser. Avoid sharing personal
+        information.
       </p>
       <button id="done-setup" class="primary-button">
         Got it <span aria-hidden="true">↗</span>
