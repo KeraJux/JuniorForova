@@ -13,44 +13,43 @@ const instructions = `You are Folio, a school research guide. Help students unde
 export function extractAnswer(data) {
   const parts = [];
   const sources = [];
-  for (const item of data.output ?? []) {
-    if (item.type !== "message" || item.role !== "assistant") continue;
-    for (const part of item.content ?? []) {
-      if (part.type !== "output_text") continue;
-      const citations = [];
-      for (const annotation of part.annotations ?? []) {
-        if (annotation.type !== "url_citation") continue;
-        let url;
-        try {
-          url = new URL(annotation.url);
-        } catch {
-          continue;
-        }
-        if (!["https:", "http:"].includes(url.protocol)) continue;
-        let index = sources.findIndex((source) => source.url === url.href);
-        if (index === -1) {
-          index = sources.length;
-          sources.push({
-            title: annotation.title || url.hostname,
-            url: url.href,
-          });
-        }
-        if (
-          Number.isInteger(annotation.start_index) &&
-          Number.isInteger(annotation.end_index) &&
-          annotation.start_index >= 0 &&
-          annotation.end_index > annotation.start_index &&
-          annotation.end_index <= part.text.length
-        ) {
-          citations.push({
-            start: annotation.start_index,
-            end: annotation.end_index,
-            source: index,
-          });
-        }
+  const message = data.choices?.[0]?.message;
+  if (message?.role === "assistant" && typeof message.content === "string") {
+    const part = { text: message.content, annotations: message.annotations };
+    const citations = [];
+    for (const entry of part.annotations ?? []) {
+      if (entry.type !== "url_citation" || !entry.url_citation) continue;
+      const annotation = entry.url_citation;
+      let url;
+      try {
+        url = new URL(annotation.url);
+      } catch {
+        continue;
       }
-      parts.push({ text: part.text, citations });
+      if (!["https:", "http:"].includes(url.protocol)) continue;
+      let index = sources.findIndex((source) => source.url === url.href);
+      if (index === -1) {
+        index = sources.length;
+        sources.push({
+          title: annotation.title || url.hostname,
+          url: url.href,
+        });
+      }
+      if (
+        Number.isInteger(annotation.start_index) &&
+        Number.isInteger(annotation.end_index) &&
+        annotation.start_index >= 0 &&
+        annotation.end_index > annotation.start_index &&
+        annotation.end_index <= part.text.length
+      ) {
+        citations.push({
+          start: annotation.start_index,
+          end: annotation.end_index,
+          source: index,
+        });
+      }
     }
+    parts.push({ text: part.text, citations });
   }
   return { parts, sources };
 }
@@ -75,7 +74,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
     const path = new URL(req.url, "http://localhost").pathname;
     if (req.method === "GET" && path === "/api/config") {
       return json(200, {
-        configured: Boolean(env.OPENAI_API_KEY?.trim()),
+        configured: Boolean(env.OPENROUTER_API_KEY?.trim()),
         webSearch: env.WEB_SEARCH !== "false",
       });
     }
@@ -123,11 +122,11 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
       }
       if (!["Middle school", "High school", "University"].includes(input.level))
         return json(400, { error: "Choose a valid study level." });
-      if (!env.OPENAI_API_KEY?.trim())
+      if (!env.OPENROUTER_API_KEY?.trim())
         return json(503, {
           code: "NOT_CONFIGURED",
           error:
-            "AI is not connected yet. Add OPENAI_API_KEY to the server’s .env file and restart the app.",
+            "AI is not connected yet. Ask the app owner to configure the server’s OpenRouter connection.",
         });
       const now = Date.now();
       while (requests.length && requests[0] < now - 60000) requests.shift();
@@ -140,22 +139,27 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
       try {
         const webSearch = env.WEB_SEARCH !== "false";
         const response = await fetchImpl(
-          "https://api.openai.com/v1/responses",
+          "https://openrouter.ai/api/v1/chat/completions",
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+              Authorization: `Bearer ${env.OPENROUTER_API_KEY.trim()}`,
               "Content-Type": "application/json",
             },
             signal: AbortSignal.timeout(90000),
             body: JSON.stringify({
-              model: env.OPENAI_MODEL || "gpt-5-mini",
-              store: false,
-              instructions,
-              input: `Study level: ${input.level}\nResearch question: ${input.question.trim()}`,
-              max_output_tokens: 5000,
+              model: env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
+              messages: [
+                { role: "system", content: instructions },
+                {
+                  role: "user",
+                  content: `Study level: ${input.level}\nResearch question: ${input.question.trim()}`,
+                },
+              ],
+              max_tokens: 5000,
+              stream: false,
               ...(webSearch
-                ? { tools: [{ type: "web_search" }], tool_choice: "required" }
+                ? { plugins: [{ id: "web", max_results: 5 }] }
                 : {}),
             }),
           },
@@ -165,7 +169,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
             return json(502, {
               code: "KEY_REJECTED",
               error:
-                "The AI provider rejected the server API key. Replace OPENAI_API_KEY with a valid key and restart the app.",
+                "The AI provider rejected the server API key. Ask the app owner to check the OpenRouter connection.",
             });
           }
           return json(response.status === 429 ? 429 : 502, {
@@ -176,7 +180,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
           });
         }
         const data = await response.json();
-        if (data.status !== "completed")
+        if (data.error || data.choices?.[0]?.finish_reason !== "stop")
           return json(502, {
             error:
               "The research answer was incomplete. Try a narrower question.",

@@ -3,26 +3,24 @@ import assert from "node:assert/strict";
 import { createApp, extractAnswer } from "../server.js";
 
 const fixture = {
-  status: "completed",
-  output: [
+  choices: [
     {
-      type: "message",
-      role: "assistant",
-      content: [
-        {
-          type: "output_text",
-          text: "A researched answer. source",
-          annotations: [
-            {
-              type: "url_citation",
+      finish_reason: "stop",
+      message: {
+        role: "assistant",
+        content: "A researched answer. source",
+        annotations: [
+          {
+            type: "url_citation",
+            url_citation: {
               title: "Example source",
               url: "https://example.edu/research",
               start_index: 21,
               end_index: 27,
             },
-          ],
-        },
-      ],
+          },
+        ],
+      },
     },
   ],
 };
@@ -67,24 +65,33 @@ test("missing key is actionable; config and static files never expose secrets", 
 test("valid questions call real API contract with server secret and only citation metadata", async () => {
   await withApp(
     {
-      env: { OPENAI_API_KEY: "test-server-secret" },
+      env: { OPENROUTER_API_KEY: "  test-server-secret  " },
       fetchImpl: async (url, options) => {
-        assert.equal(url, "https://api.openai.com/v1/responses");
+        assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
         assert.equal(
           options.headers.Authorization,
           "Bearer test-server-secret",
         );
         const body = JSON.parse(options.body);
-        assert.equal(body.store, false);
-        assert.equal(body.tool_choice, "required");
-        assert.deepEqual(body.tools, [{ type: "web_search" }]);
-        assert.match(body.input, /High school/);
+        assert.equal(body.model, "openai/gpt-4.1-mini");
+        assert.equal(body.stream, false);
+        assert.equal(body.max_tokens, 5000);
+        assert.deepEqual(body.plugins, [{ id: "web", max_results: 5 }]);
+        assert.equal(body.messages[0].role, "system");
+        assert.deepEqual(body.messages[1], {
+          role: "user",
+          content: `Study level: High school\nResearch question: ${valid.question}`,
+        });
         return Response.json(fixture);
       },
     },
     async ({ root, post }) => {
       const config = await (await fetch(`${root}/api/config`)).text();
       assert.ok(!config.includes("test-server-secret"));
+      for (const path of ["/", "/app.js", "/styles.css", "/favicon.svg"]) {
+        const asset = await (await fetch(`${root}${path}`)).text();
+        assert.ok(!asset.includes("test-server-secret"));
+      }
       const response = await post();
       assert.equal(response.status, 200);
       const answer = await response.json();
@@ -102,7 +109,7 @@ test("valid questions call real API contract with server secret and only citatio
 test("validation, input bounds, and cross-origin protection reject before provider calls", async () => {
   await withApp(
     {
-      env: { OPENAI_API_KEY: "test" },
+      env: { OPENROUTER_API_KEY: "test" },
       fetchImpl: () => assert.fail("must not call provider"),
     },
     async ({ post, root }) => {
@@ -146,23 +153,22 @@ test("search-disabled answers do not claim sources or send search tools", async 
   await withApp(
     {
       env: {
-        OPENAI_API_KEY: "test",
+        OPENROUTER_API_KEY: "test",
         WEB_SEARCH: "false",
-        OPENAI_MODEL: "configured-model",
+        OPENROUTER_MODEL: "configured-model",
       },
       fetchImpl: async (_, options) => {
         const body = JSON.parse(options.body);
         assert.equal(body.model, "configured-model");
-        assert.equal(body.tools, undefined);
+        assert.equal(body.plugins, undefined);
         return Response.json({
-          status: "completed",
-          output: [
+          choices: [
             {
-              type: "message",
-              role: "assistant",
-              content: [
-                { type: "output_text", text: "Unverified model knowledge." },
-              ],
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: "Unverified model knowledge.",
+              },
             },
           ],
         });
@@ -178,29 +184,31 @@ test("search-disabled answers do not claim sources or send search tools", async 
 
 test("citations deduplicate; unsafe and fabricated source links are not promoted", () => {
   const data = structuredClone(fixture);
-  data.output[0].content[0].annotations.push(
+  data.choices[0].message.annotations.push(
     {
       type: "url_citation",
-      title: "Duplicate",
-      url: "https://example.edu/research",
+      url_citation: { title: "Duplicate", url: "https://example.edu/research" },
     },
     {
       type: "url_citation",
-      title: "Unsafe",
-      url: "javascript:alert(1)",
-      start_index: 0,
-      end_index: 3,
+      url_citation: {
+        title: "Unsafe",
+        url: "javascript:alert(1)",
+        start_index: 0,
+        end_index: 3,
+      },
     },
-    { type: "url_citation", title: "Broken", url: "not-a-url" },
+    {
+      type: "url_citation",
+      url_citation: { title: "Broken", url: "not-a-url" },
+    },
   );
-  data.output[0].content.push({
-    type: "output_text",
-    text: "Invented source: https://not-a-real-source.example",
-  });
+  data.choices[0].message.content +=
+    " Invented source: https://not-a-real-source.example";
   const result = extractAnswer(data);
   assert.equal(result.sources.length, 1);
   assert.equal(result.parts[0].citations.length, 1);
-  assert.deepEqual(result.parts[1].citations, []);
+  assert.equal(result.parts.length, 1);
 });
 
 test("provider errors, incomplete output and network failure are honest and sanitized", async () => {
@@ -212,13 +220,48 @@ test("provider errors, incomplete output and network failure are honest and sani
     ],
     [async () => new Response("", { status: 429 }), 429, /usage limit/],
     [
+      async () => new Response("secret-provider-detail", { status: 402 }),
+      502,
+      /could not complete/,
+    ],
+    [
+      async () => new Response("secret-provider-detail", { status: 500 }),
+      502,
+      /could not complete/,
+    ],
+    [
       async () =>
-        Response.json({ status: "incomplete", output: fixture.output }),
+        Response.json({ error: { message: "secret-provider-detail" } }),
+      502,
+      /incomplete/,
+    ],
+    [async () => Response.json({ choices: [] }), 502, /incomplete/],
+    [async () => new Response("invalid-json"), 502, /could not be reached/],
+    [
+      async () => {
+        throw new DOMException("secret-provider-detail", "TimeoutError");
+      },
+      502,
+      /took too long/,
+    ],
+    [
+      async () =>
+        Response.json({
+          choices: [{ ...fixture.choices[0], finish_reason: "length" }],
+        }),
       502,
       /incomplete/,
     ],
     [
-      async () => Response.json({ status: "completed", output: [] }),
+      async () =>
+        Response.json({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { role: "assistant", content: "" },
+            },
+          ],
+        }),
       502,
       /No answer/,
     ],
@@ -231,7 +274,7 @@ test("provider errors, incomplete output and network failure are honest and sani
     ],
   ]) {
     await withApp(
-      { env: { OPENAI_API_KEY: "test" }, fetchImpl: provider },
+      { env: { OPENROUTER_API_KEY: "test" }, fetchImpl: provider },
       async ({ post }) => {
         const response = await post();
         assert.equal(response.status, status);
@@ -247,7 +290,7 @@ test("global request budget bounds repeated provider usage", async () => {
   let calls = 0;
   await withApp(
     {
-      env: { OPENAI_API_KEY: "test" },
+      env: { OPENROUTER_API_KEY: "test" },
       fetchImpl: async () => {
         calls++;
         return Response.json(fixture);
@@ -259,4 +302,22 @@ test("global request budget bounds repeated provider usage", async () => {
       assert.equal(calls, 12);
     },
   );
+});
+
+test("blank or legacy provider keys cannot enable OpenRouter", async () => {
+  for (const env of [
+    { OPENROUTER_API_KEY: "   " },
+    { OPENAI_API_KEY: "unused-legacy-test-key" },
+  ]) {
+    await withApp(
+      { env, fetchImpl: () => assert.fail("must not call provider") },
+      async ({ root, post }) => {
+        assert.equal(
+          (await (await fetch(`${root}/api/config`)).json()).configured,
+          false,
+        );
+        assert.equal((await post()).status, 503);
+      },
+    );
+  }
 });
