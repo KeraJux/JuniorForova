@@ -340,3 +340,173 @@ test("only explicitly enabled Android origin gets CORS access; invalid modes are
     );
   }
 });
+
+test("OpenRouter research uses its own key and web plugin; citations come only from metadata", async () => {
+  await withApp(
+    {
+      env: {
+        AI_PROVIDER: "openrouter",
+        OPENAI_API_KEY: "must-not-use-openai-key",
+        OPENROUTER_API_KEY: "test-openrouter-secret",
+        OPENROUTER_MODEL: "configured/router-model",
+      },
+      fetchImpl: async (url, options) => {
+        assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
+        assert.equal(
+          options.headers.Authorization,
+          "Bearer test-openrouter-secret",
+        );
+        const body = JSON.parse(options.body);
+        assert.equal(body.model, "configured/router-model");
+        assert.equal(body.max_tokens, 5000);
+        assert.deepEqual(body.plugins, [
+          { id: "web", engine: "exa", max_results: 5 },
+        ]);
+        assert.match(body.messages[0].content, /Never invent a source/);
+        assert.match(body.messages[1].content, /Study level: High school/);
+        return Response.json({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: "A researched answer. source https://invented.example",
+                annotations: [
+                  {
+                    type: "url_citation",
+                    url_citation: fixture.output[0].content[0].annotations[0],
+                  },
+                  {
+                    type: "url_citation",
+                    url_citation: { url: "javascript:alert(1)" },
+                  },
+                  { type: "url_citation" },
+                ],
+              },
+            },
+          ],
+        });
+      },
+    },
+    async ({ root, post }) => {
+      assert.deepEqual(await (await fetch(`${root}/api/config`)).json(), {
+        configured: true,
+        webSearch: true,
+      });
+      const response = await post();
+      assert.equal(response.status, 200);
+      const answer = await response.json();
+      assert.equal(answer.webSearch, true);
+      assert.deepEqual(answer.sources, [
+        { title: "Example source", url: "https://example.edu/research" },
+      ]);
+      assert.deepEqual(answer.parts[0].citations, [
+        { start: 21, end: 27, source: 0 },
+      ]);
+      assert.ok(!JSON.stringify(answer).includes("test-openrouter-secret"));
+      assert.equal((await fetch(`${root}/.env`)).status, 404);
+    },
+  );
+});
+
+test("OpenRouter explanations and disabled research do not enable search", async () => {
+  for (const mode of ["explain", "research"]) {
+    await withApp(
+      {
+        env: {
+          AI_PROVIDER: "openrouter",
+          OPENROUTER_API_KEY: "test",
+          ...(mode === "research" ? { WEB_SEARCH: "false" } : {}),
+        },
+        fetchImpl: async (_, options) => {
+          const body = JSON.parse(options.body);
+          assert.equal(body.model, "openai/gpt-4.1-mini");
+          assert.equal(body.plugins, undefined);
+          if (mode === "explain")
+            assert.match(
+              body.messages[0].content,
+              /without live source verification/,
+            );
+          return Response.json({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content:
+                    "Fixture model knowledge with https://invented.example",
+                },
+              },
+            ],
+          });
+        },
+      },
+      async ({ post }) => {
+        const response = await post({ ...valid, mode });
+        assert.equal(response.status, 200);
+        const answer = await response.json();
+        assert.equal(answer.webSearch, false);
+        assert.deepEqual(answer.sources, []);
+      },
+    );
+  }
+});
+
+test("OpenRouter missing key, rejected key, insufficient credits and incomplete results are honest", async () => {
+  await withApp(
+    {
+      env: { AI_PROVIDER: "openrouter", OPENAI_API_KEY: "wrong-provider" },
+      fetchImpl: () => assert.fail("must not call provider"),
+    },
+    async ({ post, root }) => {
+      assert.equal(
+        (await (await fetch(`${root}/api/config`)).json()).configured,
+        false,
+      );
+      const response = await post();
+      assert.equal(response.status, 503);
+      assert.match((await response.json()).error, /OPENROUTER_API_KEY/);
+    },
+  );
+  for (const [providerResponse, pattern] of [
+    [
+      new Response("private provider details", { status: 401 }),
+      /OPENROUTER_API_KEY/,
+    ],
+    [
+      new Response("private provider details", { status: 402 }),
+      /needs credits/,
+    ],
+    [
+      Response.json({
+        choices: [
+          { finish_reason: "length", message: { content: "Truncated" } },
+        ],
+      }),
+      /incomplete/,
+    ],
+    [
+      Response.json({ error: { message: "private provider details" } }),
+      /incomplete/,
+    ],
+    [
+      Response.json({
+        choices: [{ finish_reason: "stop", message: { content: null } }],
+      }),
+      /No answer/,
+    ],
+  ]) {
+    await withApp(
+      {
+        env: { AI_PROVIDER: "openrouter", OPENROUTER_API_KEY: "test" },
+        fetchImpl: async () => providerResponse,
+      },
+      async ({ post }) => {
+        const response = await post();
+        assert.equal(response.status, 502);
+        const body = await response.text();
+        assert.match(body, pattern);
+        assert.ok(!body.includes("private provider details"));
+      },
+    );
+  }
+});

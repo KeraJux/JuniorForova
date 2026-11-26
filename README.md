@@ -15,22 +15,27 @@ Requires Node.js 22+ (24 recommended).
 ```sh
 npm ci
 cp .env.example .env
-# Set OPENAI_API_KEY in .env to your funded server-side API key.
+# Set the provider and its funded server-side API key in .env (see below).
 npm start
 ```
 
 Open http://127.0.0.1:3000. Restart the server after changing `.env`.
 
-| Server variable  | Default      | Purpose                                                                              |
-| ---------------- | ------------ | ------------------------------------------------------------------------------------ |
-| `OPENAI_API_KEY` | unset        | Required for AI; server only                                                         |
-| `OPENAI_MODEL`   | `gpt-5-mini` | Responses API model; account must have model and web search access                   |
-| `WEB_SEARCH`     | `true`       | Set exactly `false` to disable live research; explanations always run without search |
-| `APP_ORIGIN`     | unset        | Set exactly `https://localhost` to allow the bundled Android app                     |
-| `HOST`           | `127.0.0.1`  | Backend listening interface                                                          |
-| `PORT`           | `3000`       | Backend listening port                                                               |
+| Server variable      | Default               | Purpose                                                                              |
+| -------------------- | --------------------- | ------------------------------------------------------------------------------------ |
+| `AI_PROVIDER`        | `openai`              | `openai` or `openrouter`; selects the API and corresponding server key               |
+| `OPENAI_API_KEY`     | unset                 | Required when `AI_PROVIDER=openai`; server only                                      |
+| `OPENAI_MODEL`       | `gpt-5-mini`          | Responses API model; account must have model and web search access                   |
+| `OPENROUTER_API_KEY` | unset                 | Required when `AI_PROVIDER=openrouter`; server only                                  |
+| `OPENROUTER_MODEL`   | `openai/gpt-4.1-mini` | OpenRouter model slug; used only for OpenRouter                                      |
+| `WEB_SEARCH`         | `true`                | Set exactly `false` to disable live research; explanations always run without search |
+| `APP_ORIGIN`         | unset                 | Set exactly `https://localhost` to allow the bundled Android app                     |
+| `HOST`               | `127.0.0.1`           | Backend listening interface                                                          |
+| `PORT`               | `3000`                | Backend listening port                                                               |
 
-The backend uses the [OpenAI Responses API with hosted web search](https://developers.openai.com/api/docs/guides/tools-web-search). No separate search key is needed. Model and web search calls may incur provider charges. With research search enabled, tool use is required. The server does not fetch URLs suggested by users or models. Source availability and quality depend on the provider.
+The default backend uses the [OpenAI Responses API with hosted web search](https://developers.openai.com/api/docs/guides/tools-web-search). For an OpenRouter key, set `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY`, and optionally `OPENROUTER_MODEL` in the server's ignored `.env` file. OpenRouter uses Chat Completions with its [web search plugin](https://openrouter.ai/docs/guides/features/plugins/web-search), explicitly selecting Exa with up to five results for research. Explanations do not enable search. Only provider citation annotations become source cards; answers without citations remain unverified.
+
+No separate search key is needed. Model and web search calls incur provider charges, including OpenRouter's Exa search costs. With research search enabled, OpenAI requires tool use and OpenRouter enables its search plugin. The server does not fetch URLs suggested by users or models. Source availability and quality depend on the provider. Keep real keys in the backend's environment or secret store; the ignored local `.env` is not pushed or included in the APK. Restart the backend after changing it. Android still requires a reachable HTTPS backend via `STUDY_API_URL`.
 
 ## Build and review Android
 
@@ -56,7 +61,7 @@ Review on device: open My library, save a note, edit it, restart the app in airp
 
 ## Storage and privacy
 
-Questions are sent to OpenAI with `store: false`; provider data policies still apply. The backend does not log questions or persist them. Follow-ups send the original question but not prior answers. Avoid personal information in prompts.
+Questions are sent to the configured provider. OpenAI requests use `store: false`; OpenRouter routes requests to the selected model provider and, for research with search enabled, Exa. Each provider's data policies still apply. The backend does not log questions or persist them. Follow-ups send the original question but not prior answers. Avoid personal information in prompts.
 
 Up to 100 personal notes and 40 saved answers (including source links) use localStorage on this device/browser. Notes need no network connection in the bundled Android app. There are no accounts, cross-device sync, or export. Clearing app/browser data or uninstalling removes saved work. Android backup is disabled. Storage errors leave unsaved note text in place and show an actionable message.
 

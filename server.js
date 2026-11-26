@@ -58,6 +58,12 @@ export function extractAnswer(data) {
 }
 
 export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
+  const provider = env.AI_PROVIDER || "openai";
+  const openRouter = provider === "openrouter";
+  const keyName = openRouter ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
+  const apiKey = env[keyName]?.trim();
+  const configured =
+    ["openai", "openrouter"].includes(provider) && Boolean(apiKey);
   let active = 0;
   const requests = [];
   return createServer(async (req, res) => {
@@ -93,7 +99,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
     }
     if (req.method === "GET" && path === "/api/config") {
       return json(200, {
-        configured: Boolean(env.OPENAI_API_KEY?.trim()),
+        configured,
         webSearch: env.WEB_SEARCH !== "false",
       });
     }
@@ -159,11 +165,10 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
         !subjects.includes(subject)
       )
         return json(400, { error: "Choose a valid study mode and subject." });
-      if (!env.OPENAI_API_KEY?.trim())
+      if (!configured)
         return json(503, {
           code: "NOT_CONFIGURED",
-          error:
-            "AI is not connected yet. Add OPENAI_API_KEY to the server’s .env file and restart the app.",
+          error: `AI is not connected yet. Set AI_PROVIDER to openai or openrouter, add ${keyName} to the server’s .env file, and restart the app.`,
         });
       const now = Date.now();
       while (requests.length && requests[0] < now - 60000) requests.shift();
@@ -175,39 +180,68 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
       active++;
       try {
         const webSearch = mode === "research" && env.WEB_SEARCH !== "false";
+        const guidance =
+          instructions +
+          (mode === "explain"
+            ? " This is a subject explanation. Teach step by step, define key terms, give a worked example, then a short practice question. Say it is based on model knowledge without live source verification."
+            : " This is research. Use source citations to support the answer.");
+        const question = `Study level: ${input.level}\nSubject: ${subject}\nQuestion: ${input.question.trim()}`;
         const response = await fetchImpl(
-          "https://api.openai.com/v1/responses",
+          openRouter
+            ? "https://openrouter.ai/api/v1/chat/completions"
+            : "https://api.openai.com/v1/responses",
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+              Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
             },
             signal: AbortSignal.timeout(90000),
-            body: JSON.stringify({
-              model: env.OPENAI_MODEL || "gpt-5-mini",
-              store: false,
-              instructions:
-                instructions +
-                (mode === "explain"
-                  ? " This is a subject explanation. Teach step by step, define key terms, give a worked example, then a short practice question. Say it is based on model knowledge without live source verification."
-                  : " This is research. Use source citations to support the answer."),
-              input: `Study level: ${input.level}\nSubject: ${subject}\nQuestion: ${input.question.trim()}`,
-              max_output_tokens: 5000,
-              ...(webSearch
-                ? { tools: [{ type: "web_search" }], tool_choice: "required" }
-                : {}),
-            }),
+            body: JSON.stringify(
+              openRouter
+                ? {
+                    model: env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
+                    messages: [
+                      { role: "system", content: guidance },
+                      { role: "user", content: question },
+                    ],
+                    max_tokens: 5000,
+                    ...(webSearch
+                      ? {
+                          plugins: [
+                            { id: "web", engine: "exa", max_results: 5 },
+                          ],
+                        }
+                      : {}),
+                  }
+                : {
+                    model: env.OPENAI_MODEL || "gpt-5-mini",
+                    store: false,
+                    instructions: guidance,
+                    input: question,
+                    max_output_tokens: 5000,
+                    ...(webSearch
+                      ? {
+                          tools: [{ type: "web_search" }],
+                          tool_choice: "required",
+                        }
+                      : {}),
+                  },
+            ),
           },
         );
         if (!response.ok) {
           if (response.status === 401) {
             return json(502, {
               code: "KEY_REJECTED",
-              error:
-                "The AI provider rejected the server API key. Replace OPENAI_API_KEY with a valid key and restart the app.",
+              error: `The AI provider rejected the server API key. Replace ${keyName} with a valid key and restart the app.`,
             });
           }
+          if (response.status === 402)
+            return json(502, {
+              error:
+                "The AI provider needs credits. Check your provider balance or key spending limit, then retry.",
+            });
           return json(response.status === 429 ? 429 : 502, {
             error:
               response.status === 429
@@ -215,7 +249,41 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
                 : "The AI provider could not complete this request. Check the server key, model access, and web search support, then retry.",
           });
         }
-        const data = await response.json();
+        let data = await response.json();
+        if (openRouter) {
+          const choice = data.choices?.[0];
+          // Only provider citation metadata becomes a source. URLs written in
+          // model text never become verified source cards.
+          data = {
+            status:
+              choice?.finish_reason === "stop" ? "completed" : "incomplete",
+            output: [
+              {
+                type: "message",
+                role: "assistant",
+                content: [
+                  {
+                    type: "output_text",
+                    text:
+                      typeof choice?.message?.content === "string"
+                        ? choice.message.content
+                        : "",
+                    annotations: (choice?.message?.annotations ?? [])
+                      .filter(
+                        (annotation) =>
+                          annotation.type === "url_citation" &&
+                          annotation.url_citation,
+                      )
+                      .map((annotation) => ({
+                        ...annotation.url_citation,
+                        type: "url_citation",
+                      })),
+                  },
+                ],
+              },
+            ],
+          };
+        }
         if (data.status !== "completed")
           return json(502, {
             error:
